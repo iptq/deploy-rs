@@ -6,7 +6,8 @@
 use std::collections::HashMap;
 use std::io::{stdin, stdout, Write};
 
-use clap::{ArgMatches, Clap, FromArgMatches};
+use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser};
+use clap_complete::Shell;
 
 use crate as deploy;
 
@@ -19,7 +20,7 @@ use thiserror::Error;
 use tokio::process::Command;
 
 /// Simple Rust rewrite of a simple Nix Flake deployment tool
-#[derive(Clap, Debug, Clone)]
+#[derive(Parser, Debug, Clone)]
 #[clap(version = "1.0", author = "Serokell <https://serokell.io/>")]
 pub struct Opts {
     /// The flake to deploy
@@ -99,6 +100,10 @@ pub struct Opts {
     /// Which sudo command to use. Must accept at least two arguments: user name to execute commands as and the rest is the command to execute
     #[clap(long)]
     sudo: Option<String>,
+
+    /// Generate CLI completions
+    #[clap(long, value_name = "SHELL_TYPE")]
+    generate_completions: Option<Shell>,
 }
 
 /// Returns if the available Nix installation supports flakes
@@ -392,7 +397,7 @@ pub enum RunDeployError {
     #[error("Failed to revoke profile: {0}")]
     RevokeProfile(#[from] deploy::deploy::RevokeProfileError),
     #[error("Deployment failed, rolled back to previous generation")]
-    Rollback
+    Rollback,
 }
 
 type ToDeploy<'a> = Vec<(
@@ -575,7 +580,8 @@ async fn run_deploy(
     // Rollbacks adhere to the global seeting to auto_rollback and secondary
     // the profile's configuration
     for (_, deploy_data, deploy_defs) in &parts {
-        if let Err(e) = deploy::deploy::deploy_profile(deploy_data, deploy_defs, dry_activate, boot).await
+        if let Err(e) =
+            deploy::deploy::deploy_profile(deploy_data, deploy_defs, dry_activate, boot).await
         {
             error!("{}", e);
             if dry_activate {
@@ -616,15 +622,27 @@ pub enum RunError {
     ParseFlake(#[from] deploy::ParseFlakeError),
     #[error("Error initiating logger: {0}")]
     Logger(#[from] flexi_logger::FlexiLoggerError),
+    #[error("Error parsing args: {0}")]
+    Clap(#[from] clap::error::Error),
     #[error("{0}")]
     RunDeploy(#[from] RunDeployError),
 }
 
 pub async fn run(args: Option<&ArgMatches>) -> Result<(), RunError> {
     let opts = match args {
-        Some(o) => <Opts as FromArgMatches>::from_arg_matches(o),
+        Some(o) => <Opts as FromArgMatches>::from_arg_matches(o)?,
         None => Opts::parse(),
     };
+
+    if let Some(shell_type) = opts.generate_completions {
+        clap_complete::generate(
+            shell_type,
+            &mut Opts::command(),
+            clap::crate_name!(),
+            &mut std::io::stdout(),
+        );
+        return Ok(());
+    }
 
     deploy::init_logger(
         opts.debug_logs,
