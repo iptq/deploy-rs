@@ -43,10 +43,10 @@
 
           postInstall = ''
             completions=$(mktemp -d)
-            $out/bin/deploy --generate-completions bash > $completions/deploy-rs.bash
-            $out/bin/deploy --generate-completions fish > $completions/deploy-rs.fish
-            $out/bin/deploy --generate-completions zsh > $completions/deploy-rs.zsh
-            installShellCompletion $completions/deploy-rs.{bash,fish,zsh}
+            $out/bin/deploy --generate-completions bash > $completions/deploy.bash
+            $out/bin/deploy --generate-completions fish > $completions/deploy.fish
+            $out/bin/deploy --generate-completions zsh > $completions/deploy.zsh
+            installShellCompletion $completions/deploy.{bash,fish,zsh}
           '';
         }) // { meta.description = "A Simple multi-profile Nix-flake deploy tool"; };
 

@@ -638,7 +638,7 @@ pub async fn run(args: Option<&ArgMatches>) -> Result<(), RunError> {
         clap_complete::generate(
             shell_type,
             &mut Opts::command(),
-            clap::crate_name!(),
+            "deploy",
             &mut std::io::stdout(),
         );
         return Ok(());
