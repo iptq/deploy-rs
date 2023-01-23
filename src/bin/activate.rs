@@ -6,25 +6,25 @@
 
 use signal_hook::{consts::signal::SIGHUP, iterator::Signals};
 
-use clap::Clap;
+use clap::Parser;
 
 use tokio::fs;
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-use std::time::Duration;
+use std::{time::Duration, path::PathBuf};
 
 use std::path::Path;
 
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher, Config as NotifyConfig};
 
 use thiserror::Error;
 
 use log::{debug, error, info, warn};
 
 /// Remote activation utility for deploy-rs
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 #[clap(version = "1.0", author = "Serokell <https://serokell.io/>")]
 struct Opts {
     /// Print debug logs to output
@@ -38,7 +38,7 @@ struct Opts {
     subcmd: SubCommand,
 }
 
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 enum SubCommand {
     Activate(ActivateOpts),
     Wait(WaitOpts),
@@ -46,7 +46,7 @@ enum SubCommand {
 }
 
 /// Activate a profile
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 struct ActivateOpts {
     /// The closure to activate
     closure: String,
@@ -79,7 +79,7 @@ struct ActivateOpts {
 }
 
 /// Activate a profile
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 struct WaitOpts {
     /// The closure to wait for
     closure: String,
@@ -90,7 +90,7 @@ struct WaitOpts {
 }
 
 /// Activate a profile
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 struct RevokeOpts {
     /// The profile path to revoke
     profile_path: String,
@@ -257,7 +257,7 @@ pub async fn activation_confirmation(
     let (deleted, done) = mpsc::channel(1);
 
     let mut watcher: RecommendedWatcher =
-        Watcher::new_immediate(move |res: Result<notify::event::Event, notify::Error>| {
+        RecommendedWatcher::new(move |res: Result<notify::event::Event, notify::Error>| {
             let send_result = match res {
                 Ok(e) if e.kind == notify::EventKind::Remove(notify::event::RemoveKind::File) => {
                     debug!("Got worthy removal event, sending on channel");
@@ -273,9 +273,9 @@ pub async fn activation_confirmation(
             if let Err(e) = send_result {
                 error!("Could not send file system event to watcher: {}", e);
             }
-        })?;
+        }, NotifyConfig::default())?;
 
-    watcher.watch(&lock_path, RecursiveMode::NonRecursive)?;
+    watcher.watch(&PathBuf::from(&lock_path), RecursiveMode::NonRecursive)?;
 
     if let Err(err) = danger_zone(done, confirm_timeout).await {
         error!("Error waiting for confirmation event: {}", err);
@@ -307,7 +307,7 @@ pub async fn wait(temp_path: String, closure: String) -> Result<(), WaitError> {
         // TODO: fix wasteful clone
         let lock_path = lock_path.clone();
 
-        Watcher::new_immediate(move |res: Result<notify::event::Event, notify::Error>| {
+        RecommendedWatcher::new(move |res: Result<notify::event::Event, notify::Error>| {
             let send_result = match res {
                 Ok(e) if e.kind == notify::EventKind::Create(notify::event::CreateKind::File) => {
                     match &e.paths[..] {
@@ -322,14 +322,14 @@ pub async fn wait(temp_path: String, closure: String) -> Result<(), WaitError> {
             if let Err(e) = send_result {
                 error!("Could not send file system event to watcher: {}", e);
             }
-        })?
+        }, NotifyConfig::default())?
     };
 
-    watcher.watch(&temp_path, RecursiveMode::NonRecursive)?;
+    watcher.watch(&PathBuf::from(&temp_path), RecursiveMode::NonRecursive)?;
 
     // Avoid a potential race condition by checking for existence after watcher creation
     if fs::metadata(&lock_path).await.is_ok() {
-        watcher.unwatch(&temp_path)?;
+        watcher.unwatch(&PathBuf::from(&temp_path))?;
         return Ok(());
     }
 

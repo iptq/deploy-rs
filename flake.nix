@@ -20,6 +20,7 @@
     overlay = final: prev:
     let
       system = final.stdenv.hostPlatform.system;
+      pkgs = import nixpkgs { inherit system; };
       darwinOptions = final.lib.optionalAttrs final.stdenv.isDarwin {
         buildInputs = with final.darwin.apple_sdk.frameworks; [
           SystemConfiguration
@@ -37,6 +38,16 @@
           src = ./.;
 
           cargoLock.lockFile = ./Cargo.lock;
+
+          nativeBuildInputs = with pkgs; [ installShellFiles ];
+
+          postInstall = ''
+            completions=$(mktemp -d)
+            $out/bin/deploy --generate-completions bash > $completions/deploy-rs.bash
+            $out/bin/deploy --generate-completions fish > $completions/deploy-rs.fish
+            $out/bin/deploy --generate-completions zsh > $completions/deploy-rs.zsh
+            installShellCompletion $completions/deploy-rs.{bash,fish,zsh}
+          '';
         }) // { meta.description = "A Simple multi-profile Nix-flake deploy tool"; };
 
         lib = rec {
